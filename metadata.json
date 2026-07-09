@@ -1,0 +1,6 @@
+{
+  "name": "Finanzas DF",
+  "description": "Aplicación para el control financiero del hogar con seguimiento de ingresos y egresos, estadísticas por categoría, búsqueda inteligente de productos y notificaciones de límites de gasto.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
