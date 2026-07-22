@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { CATEGORIES, Transaction } from "../types";
-import { Plus, TrendingUp, TrendingDown, DollarSign } from "./CategoryIcon";
+import { Plus, TrendingUp, TrendingDown, DollarSign, Camera, RefreshCw, Check, AlertTriangle } from "./CategoryIcon";
 
 interface TransactionFormProps {
   onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
@@ -17,6 +17,72 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onAddTransacti
     return today.toISOString().split("T")[0];
   });
 
+  // Receipt Scanner states
+  const [scanning, setScanning] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleReceiptScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setScanError("Por favor selecciona una imagen válida de la boleta (JPG, PNG, WEBP).");
+      return;
+    }
+
+    setScanning(true);
+    setScanError(null);
+    setScanSuccess(null);
+
+    // Read image as base64
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64Data = reader.result as string;
+      setReceiptPreview(base64Data);
+
+      try {
+        const response = await fetch("/api/scan-receipt", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            imageBase64: base64Data,
+            mimeType: file.type || "image/jpeg",
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "No se pudo leer la boleta.");
+        }
+
+        const data = result.data;
+        if (data) {
+          if (data.description) setDescription(data.description);
+          if (data.amount) setAmount(data.amount.toString());
+          if (data.date) setDate(data.date);
+          if (data.category && CATEGORIES.includes(data.category)) {
+            setCategory(data.category);
+          }
+          setType("expense");
+          setScanSuccess("¡Boleta leída con éxito! Revisa o ajusta los datos y presiona 'Agregar Registro'.");
+        }
+      } catch (err: any) {
+        console.error("Error scanning receipt:", err);
+        setScanError(err.message || "Error al procesar la foto de la boleta.");
+      } finally {
+        setScanning(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim() || !amount || parseFloat(amount) <= 0) return;
@@ -29,17 +95,70 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onAddTransacti
       date
     });
 
-    // Reset some fields
+    // Reset fields
     setDescription("");
     setAmount("");
+    setScanSuccess(null);
+    setReceiptPreview(null);
   };
 
   return (
     <div id="add-transaction-card" className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-        <Plus className="text-indigo-400" size={20} />
-        Registrar Movimiento
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Plus className="text-indigo-400" size={20} />
+          Registrar Movimiento
+        </h3>
+
+        {/* Scan Receipt Button */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={scanning}
+          className="bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 hover:text-white border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          title="Subir foto de boleta para auto-completar los datos del gasto"
+        >
+          {scanning ? (
+            <RefreshCw className="animate-spin text-indigo-400" size={14} />
+          ) : (
+            <Camera className="text-indigo-400" size={14} />
+          )}
+          <span>{scanning ? "Escaneando..." : "Foto de Boleta"}</span>
+        </button>
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleReceiptScan}
+          accept="image/*"
+          className="hidden"
+        />
+      </div>
+
+      {/* Scan Status & Preview Banner */}
+      {scanning && (
+        <div className="mb-4 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 flex items-center gap-2 animate-pulse">
+          <RefreshCw className="animate-spin text-indigo-400 shrink-0" size={16} />
+          <span>Analizando imagen de la boleta con IA Gemini... Extrayendo total, fecha y comercio.</span>
+        </div>
+      )}
+
+      {scanSuccess && (
+        <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-200 flex items-center gap-2">
+          <Check className="text-emerald-400 shrink-0" size={16} />
+          <span className="flex-1">{scanSuccess}</span>
+          {receiptPreview && (
+            <img src={receiptPreview} alt="Vista previa boleta" className="w-8 h-8 object-cover rounded border border-emerald-400/40 shrink-0" />
+          )}
+        </div>
+      )}
+
+      {scanError && (
+        <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+          <AlertTriangle className="text-rose-400 shrink-0" size={16} />
+          <span>{scanError}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Type Toggle */}

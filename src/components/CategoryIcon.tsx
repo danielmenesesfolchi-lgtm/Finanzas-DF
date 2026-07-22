@@ -24,7 +24,12 @@ import {
   Calendar,
   ListFilter,
   PiggyBank,
-  RefreshCw
+  RefreshCw,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  FileText,
+  Check
 } from "lucide-react";
 
 interface CategoryIconProps {
@@ -73,5 +78,10 @@ export {
   Calendar,
   ListFilter,
   PiggyBank,
-  RefreshCw
+  RefreshCw,
+  Camera,
+  Upload,
+  ImageIcon,
+  FileText,
+  Check
 };

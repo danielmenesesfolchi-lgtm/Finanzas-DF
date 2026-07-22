@@ -423,7 +423,7 @@ ${descriptionsList}
 Responde en formato JSON con la estructura especificada en el esquema.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -472,9 +472,77 @@ Responde en formato JSON con la estructura especificada en el esquema.`;
 // El endpoint de Fintoc fue removido a petición del usuario para utilizar carga directa de archivos de cartola.
 
 
-// API Endpoint to search products using Google Search grounding
+// API Endpoint to scan boletas / receipts using Gemini Vision
+app.post("/api/scan-receipt", async (req, res) => {
+  const { imageBase64, mimeType = "image/jpeg" } = req.body;
+
+  if (!imageBase64) {
+    return res.status(400).json({ error: "No se proporcionó la imagen de la boleta." });
+  }
+
+  try {
+    if (!ai) {
+      return res.status(500).json({ 
+        error: "El cliente Gemini AI no está inicializado. Asegúrate de tener GEMINI_API_KEY configurado." 
+      });
+    }
+
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    const promptText = `Analiza detalladamente esta imagen de boleta, ticket o recibo de compra.
+Extrae la siguiente información relevante para registrar el gasto:
+1. description: Nombre del establecimiento, tienda o supermercado y una breve descripción o lista resumida de lo comprado (ej: "Líder - Abarrotes y Verduras" o "Farmacia Cruz Verde").
+2. amount: El monto total final pagado como número entero o decimal sin símbolos ni puntos de miles (ej: 18990). Si no está claro, busca el total o suma principal.
+3. date: La fecha de la boleta en formato YYYY-MM-DD. Si no es visible, usa la fecha actual.
+4. category: Asigna una de estas categorías: "Comida", "Transporte", "Salud", "Servicios", "Entretenimiento", "Higiene", "Vivienda", "Educación", "Otros".`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: cleanBase64,
+            },
+          },
+          { text: promptText },
+        ],
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            description: { type: Type.STRING, description: "Establecimiento y resumen de la compra" },
+            amount: { type: Type.NUMBER, description: "Monto total pagado" },
+            date: { type: Type.STRING, description: "Fecha YYYY-MM-DD" },
+            category: { type: Type.STRING, description: "Categoría asignada" },
+          },
+          required: ["description", "amount", "date", "category"],
+        },
+      },
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+      throw new Error("No se obtuvo respuesta de Gemini al escanear la boleta.");
+    }
+
+    const data = JSON.parse(responseText.trim());
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error al escanear boleta con Gemini:", error);
+    return res.status(500).json({
+      error: "Ocurrió un error al analizar la boleta con Inteligencia Artificial.",
+      details: error.message,
+    });
+  }
+});
+
+// API Endpoint to search products and activities using Google Search grounding
 app.post("/api/search-products", async (req, res) => {
-  const { category, budget, currency = "CLP" } = req.body;
+  const { category, budget, searchQuery, currency = "CLP" } = req.body;
 
   try {
     if (!category || budget === undefined) {
@@ -488,14 +556,18 @@ app.post("/api/search-products", async (req, res) => {
       return res.json(fallback);
     }
 
-    const prompt = `Actúa como un asistente financiero experto para el hogar.
-Busca productos reales y recomendados para la categoría "${category}" con un presupuesto disponible mensual de ${budget} ${currency}.
-Necesito que me des una lista de 3 a 5 opciones de productos, servicios, marcas o canastas de compra específicos que se ajusten a este presupuesto mensual, detallando el precio estimado.
-También proporciona un consejo útil de ahorro para optimizar el gasto de esta categoría.
-Tu respuesta debe incluir enlaces web reales o de referencia obtenidos de tus resultados de búsqueda para que el usuario pueda investigar o comprarlos.`;
+    const customTopicPrompt = searchQuery ? `Enfoque específico o búsqueda deseada del usuario: "${searchQuery}".` : "";
+
+    const prompt = `Actúa como un asistente y guía financiero experto para el hogar y actividades de ocio/compras en Chile.
+Realiza una BÚSQUEDA WEB REAL en tiempo real con Google Search para encontrar actividades, panoramas, eventos, lugares, productos o servicios REALES y VIGENTES con un presupuesto máximo de ${budget} ${currency}.
+Categoría principal: "${category}". ${customTopicPrompt}
+
+Necesito que me des una lista de 3 a 5 opciones REALES y ESPECÍFICAS (con nombres reales de tiendas, parques, cines, restaurantes, panoramas o marcas) que se ajusten a este presupuesto de $${budget} ${currency}, detallando el precio estimado por persona o total.
+También proporciona un consejo útil de ahorro o recomendación práctica para esta actividad o categoría.
+Tu respuesta debe incluir nombres precisos y detalles web de referencia reales obtenidos de tus resultados de búsqueda para que el usuario pueda visitar o contratar.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -508,19 +580,19 @@ Tu respuesta debe incluir enlaces web reales o de referencia obtenidos de tus re
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  name: { type: Type.STRING, description: "Nombre del producto, servicio o paquete" },
-                  price: { type: Type.NUMBER, description: "Precio estimado numérico" },
+                  name: { type: Type.STRING, description: "Nombre de la actividad, panorama, producto o servicio real" },
+                  price: { type: Type.NUMBER, description: "Precio estimado numérico en CLP" },
                   priceFormatted: { type: Type.STRING, description: "Precio formateado con símbolo, ej: $15.000 CLP" },
-                  description: { type: Type.STRING, description: "Descripción breve del producto y dónde se puede conseguir" },
-                  reason: { type: Type.STRING, description: "Por qué es una opción inteligente para este presupuesto" },
-                  link: { type: Type.STRING, description: "Un enlace web real o de búsqueda relacionado con el producto" }
+                  description: { type: Type.STRING, description: "Descripción detallada de la actividad o producto y dónde realizarlo o comprarlo" },
+                  reason: { type: Type.STRING, description: "Por qué es una excelente opción dentro de este presupuesto" },
+                  link: { type: Type.STRING, description: "Enlace web real o de búsqueda relacionado con la opción" }
                 },
                 required: ["name", "price", "priceFormatted", "description", "reason", "link"]
               }
             },
             generalAdvice: { 
               type: Type.STRING, 
-              description: "Un consejo práctico y detallado para ahorrar específicamente en esta categoría con este presupuesto." 
+              description: "Un consejo práctico y detallado para disfrutar o ahorrar específicamente en esta actividad o categoría con este presupuesto." 
             }
           },
           required: ["products", "generalAdvice"]
@@ -562,7 +634,7 @@ Tu respuesta debe incluir enlaces web reales o de referencia obtenidos de tus re
       res.json(fallback);
     } catch (fallbackError: any) {
       res.status(500).json({ 
-        error: "Ocurrió un error al procesar la búsqueda inteligente de productos.",
+        error: "Ocurrió un error al procesar la búsqueda inteligente de productos y actividades.",
         details: error.message 
       });
     }

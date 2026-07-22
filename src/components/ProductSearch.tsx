@@ -12,18 +12,27 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
   initialBudget
 }) => {
   const [category, setCategory] = useState(CATEGORIES[0]);
-  const [budget, setBudget] = useState("100");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [budget, setBudget] = useState("30000");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState("");
 
   const loadingMessages = [
-    "Consultando Gemini AI con Google Search...",
-    "Buscando productos reales en línea...",
-    "Alineando opciones con tu presupuesto disponible...",
-    "Filtrando recomendaciones inteligentes para el hogar...",
-    "Cargando consejos prácticos de ahorro..."
+    "Ejecutando Búsqueda Web Real con Google Search...",
+    "Buscando panoramas, eventos y actividades vigentes...",
+    "Alineando opciones reales con tu presupuesto...",
+    "Filtrando recomendaciones verificadas...",
+    "Generando enlaces directos y consejos de ahorro..."
+  ];
+
+  const quickPresets = [
+    { label: "🎉 Panoramas Fin de Semana", cat: "Entretenimiento", query: "Panoramas y actividades fin de semana en Chile" },
+    { label: "🍽️ Restaurantes y Salidas", cat: "Entretenimiento", query: "Restaurantes y panoramas gastronómicos" },
+    { label: "🍿 Cine y Conciertos", cat: "Entretenimiento", query: "Entradas cine, conciertos y eventos" },
+    { label: "🌳 Paseos al Aire Libre", cat: "Entretenimiento", query: "Parques y panoramas al aire libre gratis o económicos" },
+    { label: "🛒 Abarrotes y Mercadería", cat: "Comida", query: "Canasta de abarrotes y supermercados" }
   ];
 
   // Update when props from external triggers change
@@ -52,9 +61,13 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
     };
   }, [loading]);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!category || !budget || parseFloat(budget) <= 0) return;
+  const handleSearch = async (e?: React.FormEvent, customCat?: string, customQuery?: string) => {
+    if (e) e.preventDefault();
+
+    const targetCategory = customCat || category;
+    const targetQuery = customQuery !== undefined ? customQuery : searchQuery;
+
+    if (!targetCategory || !budget || parseFloat(budget) <= 0) return;
 
     setLoading(true);
     setError(null);
@@ -67,7 +80,8 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          category,
+          category: targetCategory,
+          searchQuery: targetQuery,
           budget: parseFloat(budget),
           currency: "CLP" // Defaulting to CLP for Chile
         })
@@ -81,7 +95,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
       setResult(data);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "No se pudo conectar con el servidor de búsqueda de productos.");
+      setError(err.message || "No se pudo conectar con el servidor de búsqueda.");
     } finally {
       setLoading(false);
     }
@@ -98,16 +112,35 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
       <div className="shrink-0 mb-4">
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
           <Sparkle className="text-indigo-400 animate-pulse" size={20} />
-          Buscador de Compras Inteligente (Gemini AI)
+          Buscador de Actividades y Compras Reales (Google Search + Gemini AI)
         </h3>
         <p className="text-xs text-slate-400 mt-1">
-          Encuentra productos y canastas recomendadas en internet que se ajusten a tu presupuesto mensual disponible.
+          Encuentra panoramas, actividades de ocio, servicios o compras reales en internet adaptados exactamente a tu presupuesto.
         </p>
       </div>
 
+      {/* Quick preset chips */}
+      <div className="mb-3 shrink-0 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider shrink-0 mr-1">Rápidos:</span>
+        {quickPresets.map((preset, idx) => (
+          <button
+            key={idx}
+            type="button"
+            onClick={() => {
+              setCategory(preset.cat);
+              setSearchQuery(preset.query);
+              handleSearch(undefined, preset.cat, preset.query);
+            }}
+            className="shrink-0 text-[11px] bg-white/5 hover:bg-indigo-500/20 hover:border-indigo-500/40 border border-white/10 text-slate-300 hover:text-white px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
       {/* Form Section */}
-      <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 p-4 bg-white/5 border border-white/5 rounded-xl shrink-0">
-        <div>
+      <form onSubmit={(e) => handleSearch(e)} className="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-5 p-4 bg-white/5 border border-white/5 rounded-xl shrink-0">
+        <div className="sm:col-span-3">
           <label htmlFor="search-category" className="block text-xs font-medium text-slate-400 mb-1">
             Categoría
           </label>
@@ -125,7 +158,21 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
           </select>
         </div>
 
-        <div>
+        <div className="sm:col-span-4">
+          <label htmlFor="search-query" className="block text-xs font-medium text-slate-400 mb-1">
+            Actividad / Búsqueda específica (Opcional)
+          </label>
+          <input
+            type="text"
+            id="search-query"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Ej: Panoramas de fin de semana, Cines, Restaurantes..."
+            className="w-full px-3 py-2 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 text-xs bg-white/5 text-white placeholder-slate-400 transition-all"
+          />
+        </div>
+
+        <div className="sm:col-span-3">
           <label htmlFor="search-budget" className="block text-xs font-medium text-slate-400 mb-1">
             Presupuesto Máximo
           </label>
@@ -146,7 +193,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
           </div>
         </div>
 
-        <div className="flex items-end">
+        <div className="sm:col-span-2 flex items-end">
           <button
             type="submit"
             disabled={loading}
@@ -157,7 +204,7 @@ export const ProductSearch: React.FC<ProductSearchProps> = ({
             ) : (
               <Search size={14} />
             )}
-            Buscar Opciones
+            Buscar
           </button>
         </div>
       </form>
